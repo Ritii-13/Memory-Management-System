@@ -26,14 +26,6 @@ macro to make the output of all system same and conduct a fair evaluation.
 #define PAGE_SIZE 4096
 
 
-/*
-Initializes all the required parameters for the MeMS system. The main parameters to be initialized are:
-1. the head of the free list i.e. the pointer that points to the head of the free list
-2. the starting MeMS virtual address from which the heap in our MeMS virtual address space will start.
-3. any other global variable that you want for the MeMS implementation can be initialized here.
-Input Parameter: Nothing
-Returns: Nothing
-*/
 // Define a structure for the main chain of the free list
 struct MainChainNode {
     struct SubChainNode* subChainHead;
@@ -53,16 +45,16 @@ struct SubChainNode {
 
 static struct MainChainNode* freeListHead = NULL;
 
-static void addSubChainNode(struct MainChainNode* mainNode, size_t size, int status) {
-    struct SubChainNode* newSubNode = (struct SubChainNode*)malloc(sizeof(struct SubChainNode));
-    if (newSubNode == NULL) {
-        // Handle memory allocation error
-        fprintf(stderr, "Error: Failed to allocate memory for a new SubChainNode.\n");
-        return;
+static void addSubChainNode(struct MainChainNode* mainNode, size_t size, int status, void* v_addr) {
+    struct SubChainNode* newSubNode = (struct SubChainNode*)mmap(v_addr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (newSubNode == MAP_FAILED) {
+        perror("mmap");
+        exit(1);
     }
 
     newSubNode->size = size;
     newSubNode->status = status; 
+    newSubNode->virtual_address = v_addr;
     newSubNode->prev = NULL;     
     newSubNode->next = NULL;
 
@@ -77,8 +69,23 @@ static void addSubChainNode(struct MainChainNode* mainNode, size_t size, int sta
         newSubNode->prev = lastNode;
     }
 }
-void mems_init(){
 
+/*
+Initializes all the required parameters for the MeMS system. The main parameters to be initialized are:
+1. the head of the free list i.e. the pointer that points to the head of the free list
+2. the starting MeMS virtual address from which the heap in our MeMS virtual address space will start.
+3. any other global variable that you want for the MeMS implementation can be initialized here.
+Input Parameter: Nothing
+Returns: Nothing
+*/
+void mems_init(){
+    freeListHead = (struct MainChainNode*)mmap(NULL, sizeof(struct MainChainNode), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (freeListHead == MAP_FAILED) {
+        perror("mmap");
+        exit(1);
+    }
+    freeListHead->subChainHead = NULL;
+    freeListHead->next = NULL;
 }
 
 
@@ -89,6 +96,19 @@ Input Parameter: Nothing
 Returns: Nothing
 */
 void mems_finish(){
+    struct MainChainNode* currentNode = freeListHead;
+    while (currentNode != NULL) {
+        struct SubChainNode* subChainNode = currentNode->subChainHead;
+        while (subChainNode != NULL) {
+            struct SubChainNode* subChainNode = currentNode->subChainHead;
+            subChainNode = subChainNode->next;
+            munmap(temp, temp->size);
+        }
+        struct MainChainNode* temp = currentNode;
+        currentNode = currentNode->next;
+        munmap(temp, sizeof(struct MainChainNode));
+    }
+    freeListHead = NULL;
     
 }
 
@@ -106,7 +126,40 @@ Parameter: The size of the memory the user program wants
 Returns: MeMS Virtual address (that is created by MeMS)
 */ 
 void* mems_malloc(size_t size){
+    struct MainChainNode* currentNode = freeListHead;
 
+    while (currentNode != NULL) {
+        struct SubChainNode* subChainNode = currentNode->subChainHead;
+        while (subChainNode != NULL) {
+            if (subChainNode->status == 0 && subChainNode->size >= size) {
+                // Found a suitable segment in the free list
+                if (subChainNode->size > size) {
+                    // Split the segment if it's larger than required
+                    size_t newSize = subChainNode->size - size;
+                    subChainNode->size = size;
+
+                    // Create a new sub-chain node for the remaining space
+                    addSubChainNode(currentNode, newSize, 0, subChainNode->virtual_address + size);
+                }
+
+                subChainNode->status = 1; // Set the status to PROCESS
+                return subChainNode->virtual_address;
+            }
+            subChainNode = subChainNode->next;
+        }
+        currentNode = currentNode->next;
+    }
+
+    // If no suitable segment is found, use mmap
+    void* newMemory = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (newMemory == MAP_FAILED) {
+        perror("mmap");
+        exit(1);
+    }
+
+    // Add the newly mapped memory to the free list
+    addSubChainNode(currentNode, size, 1, newMemory);
+    return newMemory;
 }
 
 
@@ -167,17 +220,17 @@ void mems_free(void* v_ptr) {
 
     struct MainChainNode* currentNode = freeListHead;
     
-while (currentNode != NULL) {
-    struct SubChainNode* subChainNode = currentNode->subChainHead;
-    while (subChainNode != NULL) {
-        if (subChainNode->virtual_address == v_ptr) {
-            subChainNode->status = HOLE;
+    while (currentNode != NULL) {
+        struct SubChainNode* subChainNode = currentNode->subChainHead;
+        while (subChainNode != NULL) {
+            if (subChainNode->virtual_address == v_ptr) {
+                subChainNode->status = HOLE;
 
-            return;
+                return;
+            }
+            subChainNode = subChainNode->next; 
         }
-        subChainNode = subChainNode->next; 
+        currentNode = currentNode->next;
     }
-    currentNode = currentNode->next;
-}
 
 }
