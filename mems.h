@@ -206,9 +206,28 @@ Returns the MeMS physical address mapped to ptr ( ptr is MeMS virtual address).
 Parameter: MeMS Virtual address (that is created by MeMS)
 Returns: MeMS physical address mapped to the passed ptr (MeMS virtual address).
 */
-void *mems_get(void*v_ptr){
-    
+void *mems_get(void* v_ptr) {
+    // Check if v_ptr is a valid MeMS virtual address
+    // You should have a mechanism to verify if v_ptr is a valid virtual address
+    // This might involve checking if it falls within allocated memory regions.
+
+    if (v_ptr == NULL) {
+        // Handle the case where v_ptr is NULL (invalid)
+        // You can implement your error handling logic here
+        return NULL; // Or an appropriate error value
+    }
+
+    // Calculate the MeMS physical address based on your mapping
+    uintptr_t mems_virtual_base = 0x100000; // Replace with your actual base address
+    uintptr_t offset = (uintptr_t)v_ptr;
+    uintptr_t mems_physical_address = mems_virtual_base + offset;
+
+    // Return the MeMS physical address
+    return (void*)mems_physical_address;
 }
+
+
+
 
 
 /*
