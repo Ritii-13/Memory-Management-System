@@ -1,6 +1,124 @@
 // include other header files as needed
-#include"mems.h"
+#include "mems.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/mman.h>
 
+#define HOLE 0
+#define PROCESS 1
+
+#define PAGE_SIZE 4096
+
+// Define a structure for the main chain of the free list
+struct MainChainNode {
+    struct SubChainNode* subChainHead;
+    struct MainChainNode* next;
+};
+
+
+// Define a structure for the sub-chain nodes
+struct SubChainNode {
+    size_t size;
+    int status; 
+    void* virtual_address;
+    struct SubChainNode* prev;
+    struct SubChainNode* next;
+};
+
+
+static struct MainChainNode* freeListHead = NULL;
+
+static void addSubChainNode(struct MainChainNode* mainNode, size_t size, int status) {
+    struct SubChainNode* newSubNode = (struct SubChainNode*)malloc(sizeof(struct SubChainNode));
+    if (newSubNode == NULL) {
+        // Handle memory allocation error
+        fprintf(stderr, "Error: Failed to allocate memory for a new SubChainNode.\n");
+        return;
+    }
+
+    newSubNode->size = size;
+    newSubNode->status = status; 
+    newSubNode->prev = NULL;     
+    newSubNode->next = NULL;
+
+    if (mainNode->subChainHead == NULL) {
+        mainNode->subChainHead = newSubNode;
+    } else {
+        struct SubChainNode* lastNode = mainNode->subChainHead;
+        while (lastNode->next != NULL) {
+            lastNode = lastNode->next;
+        }
+        lastNode->next = newSubNode;
+        newSubNode->prev = lastNode;
+    }
+}
+void mems_init() {
+    // Initialize the MeMS system
+    // This includes initializing the free list, creating the initial node, etc.
+}
+
+void mems_finish() {
+    // Clean up the MeMS system, unmap any remaining memory, and release resources
+}
+
+void* mems_malloc(size_t size) {
+    // Implement memory allocation logic
+    // Check if a segment in the free list can fulfill the request, if not, use mmap
+    // Update the free list accordingly and return a MeMS virtual address
+}
+
+void mems_free(void* v_ptr) {
+
+    struct MainChainNode* currentNode = freeListHead;
+    
+while (currentNode != NULL) {
+    struct SubChainNode* subChainNode = currentNode->subChainHead;
+    while (subChainNode != NULL) {
+        if (subChainNode->virtual_address == v_ptr) {
+            subChainNode->status = HOLE;
+
+            return;
+        }
+        subChainNode = subChainNode->next; 
+    }
+    currentNode = currentNode->next;
+}
+
+}
+
+void mems_print_stats() {
+    int totalPagesUsed = 0;
+    size_t totalUnusedMemory = 0;
+
+    struct MainChainNode* mainNode = freeListHead;
+    while (mainNode != NULL) {
+        printf("Main Chain Node: (Details about this node)\n");
+
+        struct SubChainNode* subNode = mainNode->subChainHead;
+        while (subNode != NULL) {
+            printf("Sub-Chain Node: (Details about this segment)\n");
+
+            if (subNode->status == HOLE) {
+                totalUnusedMemory += subNode->size;
+            }
+
+            subNode = subNode->next;
+        }
+
+        mainNode = mainNode->next;
+    }
+
+    printf("Total Pages Used: %d\n", totalPagesUsed);
+    printf("Total Unused Memory: %zu bytes\n", totalUnusedMemory);
+}
+
+
+void* mems_get(void* v_ptr) {
+    // Convert a MeMS virtual address to a MeMS physical address
+    // This function allows users to access the allocated memory
+}
+//--------------------------------------------------------------------//
 
 int main(int argc, char const *argv[])
 {
