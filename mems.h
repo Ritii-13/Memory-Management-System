@@ -100,7 +100,7 @@ void mems_finish(){
     while (currentNode != NULL) {
         struct SubChainNode* subChainNode = currentNode->subChainHead;
         while (subChainNode != NULL) {
-            struct SubChainNode* subChainNode = currentNode->subChainHead;
+            struct SubChainNode* temp = subChainNode;  // Define temp here
             subChainNode = subChainNode->next;
             munmap(temp, temp->size);
         }
