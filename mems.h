@@ -13,6 +13,8 @@ REFER DOCUMENTATION FOR MORE DETAILS ON FUNSTIONS AND THEIR FUNCTIONALITY
 #include<stdlib.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <stdbool.h>
+
 
 #define HOLE 0
 #define PROCESS 1
@@ -41,6 +43,37 @@ struct SubChainNode {
     struct SubChainNode* prev;
     struct SubChainNode* next;
 };
+
+// Define a structure to represent a memory segment
+struct MemorySegment {
+    void* start_address;
+    size_t size;
+    struct MemorySegment* next;
+};
+
+// Create a global pointer to the first memory segment
+struct MemorySegment* allocated_segments = NULL;
+
+bool is_valid_virtual_address(void* v_ptr) {
+    // Iterate through your allocated memory segments and check if v_ptr falls within any of them
+    struct MemorySegment* segment = allocated_segments;
+    
+    while (segment != NULL) {
+        void* start_address = segment->start_address;
+        void* end_address = start_address + segment->size;
+        
+        if (v_ptr >= start_address && v_ptr < end_address) {
+            // v_ptr is within an allocated segment, so it's a valid virtual address
+            return true;
+        }
+        
+        segment = segment->next; // Move to the next segment
+    }
+
+    // If no matching segment is found, v_ptr is not a valid virtual address
+    return false;
+}
+
 
 
 static struct MainChainNode* freeListHead = NULL;
@@ -125,8 +158,9 @@ by adding it to the free list.
 Parameter: The size of the memory the user program wants
 Returns: MeMS Virtual address (that is created by MeMS)
 */ 
-void* mems_malloc(size_t size){
+void* mems_malloc(size_t size) {
     struct MainChainNode* currentNode = freeListHead;
+    struct MainChainNode* mainNode = NULL;
 
     while (currentNode != NULL) {
         struct SubChainNode* subChainNode = currentNode->subChainHead;
@@ -147,6 +181,8 @@ void* mems_malloc(size_t size){
             }
             subChainNode = subChainNode->next;
         }
+        // Move to the next main chain node
+        mainNode = currentNode;
         currentNode = currentNode->next;
     }
 
@@ -158,9 +194,18 @@ void* mems_malloc(size_t size){
     }
 
     // Add the newly mapped memory to the free list
-    addSubChainNode(currentNode, size, 1, newMemory);
+    if (mainNode == NULL) {
+        // If the free list is empty, set freeListHead to point to the new node
+        freeListHead = (struct MainChainNode*)newMemory;
+        freeListHead->subChainHead = NULL;
+        freeListHead->next = NULL;
+    } else {
+        addSubChainNode(mainNode, size, 1, newMemory);
+    }
+    
     return newMemory;
 }
+
 
 
 /*
@@ -207,27 +252,26 @@ Parameter: MeMS Virtual address (that is created by MeMS)
 Returns: MeMS physical address mapped to the passed ptr (MeMS virtual address).
 */
 void *mems_get(void* v_ptr) {
-    // Check if v_ptr is a valid MeMS virtual address
-    // You should have a mechanism to verify if v_ptr is a valid virtual address
-    // This might involve checking if it falls within allocated memory regions.
-
     if (v_ptr == NULL) {
-        // Handle the case where v_ptr is NULL (invalid)
-        // You can implement your error handling logic here
-        return NULL; // Or an appropriate error value
+        fprintf(stderr, "Error: Attempt to access a NULL virtual address.\n");
+        return NULL;
     }
 
     // Calculate the MeMS physical address based on your mapping
     uintptr_t mems_virtual_base = 0x100000; // Replace with your actual base address
+
+    // You should have a mechanism to verify if v_ptr is a valid virtual address.
+    if (!is_valid_virtual_address(v_ptr)) {
+        fprintf(stderr, "Error: Invalid virtual address.\n");
+        return NULL;
+    }
+
     uintptr_t offset = (uintptr_t)v_ptr;
     uintptr_t mems_physical_address = mems_virtual_base + offset;
 
     // Return the MeMS physical address
     return (void*)mems_physical_address;
 }
-
-
-
 
 
 /*

@@ -1,0 +1,15 @@
+---
+triple:          'x86_64-apple-darwin'
+binary-path:     example
+relocations:
+  - { offsetInCU: 0x26, offset: 0x26, size: 0x8, addend: 0x0, symName: _mems_init, symObjAddr: 0x0, symBinAddr: 0x100003710, symSize: 0x80 }
+  - { offsetInCU: 0x4D, offset: 0x4D, size: 0x8, addend: 0x0, symName: _freeListHead, symObjAddr: 0x1B90, symBinAddr: 0x100008000, symSize: 0x0 }
+  - { offsetInCU: 0xFB, offset: 0xFB, size: 0x8, addend: 0x0, symName: _mems_init, symObjAddr: 0x0, symBinAddr: 0x100003710, symSize: 0x80 }
+  - { offsetInCU: 0x110, offset: 0x110, size: 0x8, addend: 0x0, symName: _mems_finish, symObjAddr: 0x80, symBinAddr: 0x100003790, symSize: 0xA0 }
+  - { offsetInCU: 0x17A, offset: 0x17A, size: 0x8, addend: 0x0, symName: _mems_malloc, symObjAddr: 0x120, symBinAddr: 0x100003830, symSize: 0x150 }
+  - { offsetInCU: 0x1F6, offset: 0x1F6, size: 0x8, addend: 0x0, symName: _addSubChainNode, symObjAddr: 0x270, symBinAddr: 0x100003980, symSize: 0x110 }
+  - { offsetInCU: 0x26E, offset: 0x26E, size: 0x8, addend: 0x0, symName: _mems_print_stats, symObjAddr: 0x380, symBinAddr: 0x100003A90, symSize: 0xF0 }
+  - { offsetInCU: 0x2CA, offset: 0x2CA, size: 0x8, addend: 0x0, symName: _mems_get, symObjAddr: 0x470, symBinAddr: 0x100003B80, symSize: 0x50 }
+  - { offsetInCU: 0x31C, offset: 0x31C, size: 0x8, addend: 0x0, symName: _mems_free, symObjAddr: 0x4C0, symBinAddr: 0x100003BD0, symSize: 0x80 }
+  - { offsetInCU: 0x36A, offset: 0x36A, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x540, symBinAddr: 0x100003C50, symSize: 0x15B }
+...
