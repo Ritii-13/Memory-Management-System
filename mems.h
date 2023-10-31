@@ -227,6 +227,8 @@ void mems_print_stats() {
         struct SubChainNode* subNode = mainNode->subChainHead;
         while (subNode != NULL) {
             printf("Sub-Chain Node: (Details about this segment)\n");
+            printf("Segment Status: %s\n", subNode->status == HOLE ? "HOLE" : "PROCESS");
+            printf("Segment Size: %zu bytes\n", subNode->size);
 
             if (subNode->status == HOLE) {
                 totalUnusedMemory += subNode->size;
@@ -243,6 +245,7 @@ void mems_print_stats() {
     printf("Total Pages Used: %d\n", totalPagesUsed);
     printf("Total Unused Memory: %zu bytes\n", totalUnusedMemory);
 }
+
 
 
 
