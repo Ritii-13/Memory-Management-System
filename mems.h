@@ -283,20 +283,42 @@ Parameter: MeMS Virtual address (that is created by MeMS)
 Returns: nothing
 */
 void mems_free(void* v_ptr) {
-
     struct MainChainNode* currentNode = freeListHead;
     
     while (currentNode != NULL) {
         struct SubChainNode* subChainNode = currentNode->subChainHead;
         while (subChainNode != NULL) {
             if (subChainNode->virtual_address == v_ptr) {
+                // Mark the sub-chain node as HOLE
                 subChainNode->status = HOLE;
 
+                // Check for consecutive HOLE segments and merge them
+                if (subChainNode->prev != NULL && subChainNode->prev->status == HOLE) {
+                    // Merge with the previous HOLE segment
+                    subChainNode->prev->size += subChainNode->size;
+                    subChainNode->prev->next = subChainNode->next;
+                    if (subChainNode->next != NULL) {
+                        subChainNode->next->prev = subChainNode->prev;
+                    }
+                    free(subChainNode); // Free the current node
+                    subChainNode = subChainNode->prev; // Move to the merged segment
+                }
+
+                if (subChainNode->next != NULL && subChainNode->next->status == HOLE) {
+                    // Merge with the next HOLE segment
+                    subChainNode->size += subChainNode->next->size;
+                    subChainNode->next = subChainNode->next->next;
+                    if (subChainNode->next != NULL) {
+                        subChainNode->next->prev = subChainNode;
+                    }
+                    free(subChainNode->next); // Free the next node
+                }
+                
                 return;
             }
-            subChainNode = subChainNode->next; 
+            subChainNode = subChainNode->next;
         }
         currentNode = currentNode->next;
     }
-
 }
+
