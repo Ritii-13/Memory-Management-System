@@ -111,14 +111,25 @@ Initializes all the required parameters for the MeMS system. The main parameters
 Input Parameter: Nothing
 Returns: Nothing
 */
-void mems_init(){
+void mems_init() {
     freeListHead = (struct MainChainNode*)mmap(NULL, sizeof(struct MainChainNode), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (freeListHead == MAP_FAILED) {
         perror("mmap");
         exit(1);
     }
-    freeListHead->subChainHead = NULL;
+
+    freeListHead->subChainHead = (struct SubChainNode*)mmap(NULL, sizeof(struct SubChainNode), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (freeListHead->subChainHead == MAP_FAILED) {
+        perror("mmap");
+        exit(1);
+    }
+
     freeListHead->next = NULL;
+    freeListHead->subChainHead->size = PAGE_SIZE;
+    freeListHead->subChainHead->status = HOLE;
+    freeListHead->subChainHead->virtual_address = get_start_virtual_address();
+    freeListHead->subChainHead->prev = NULL;
+    freeListHead->subChainHead->next = NULL;
 }
 
 
@@ -128,7 +139,7 @@ allocated memory using the munmap system call.
 Input Parameter: Nothing
 Returns: Nothing
 */
-void mems_finish(){
+void mems_finish() {
     struct MainChainNode* currentNode = freeListHead;
     while (currentNode != NULL) {
         struct SubChainNode* subChainNode = currentNode->subChainHead;
@@ -142,7 +153,6 @@ void mems_finish(){
         munmap(temp, sizeof(struct MainChainNode));
     }
     freeListHead = NULL;
-    
 }
 
 
@@ -162,21 +172,24 @@ void* mems_malloc(size_t size) {
     struct MainChainNode* currentNode = freeListHead;
     struct MainChainNode* mainNode = NULL;
 
+    // Calculate the starting virtual address based on MeMS parameters
+    void* start_virtual_address = get_start_virtual_address();
+
     while (currentNode != NULL) {
         struct SubChainNode* subChainNode = currentNode->subChainHead;
         while (subChainNode != NULL) {
-            if (subChainNode->status == 0 && subChainNode->size >= size) {
-                // Found a suitable segment in the free list
+            if (subChainNode->status == HOLE && subChainNode->size >= size) {
+                // Found a suitable HOLE segment in the free list
                 if (subChainNode->size > size) {
                     // Split the segment if it's larger than required
                     size_t newSize = subChainNode->size - size;
                     subChainNode->size = size;
 
                     // Create a new sub-chain node for the remaining space
-                    addSubChainNode(currentNode, newSize, 0, subChainNode->virtual_address + size);
+                    addSubChainNode(currentNode, newSize, HOLE, subChainNode->virtual_address + size);
                 }
 
-                subChainNode->status = 1; // Set the status to PROCESS
+                subChainNode->status = PROCESS; // Set the status to PROCESS
                 return subChainNode->virtual_address;
             }
             subChainNode = subChainNode->next;
@@ -186,26 +199,34 @@ void* mems_malloc(size_t size) {
         currentNode = currentNode->next;
     }
 
-    // If no suitable segment is found, use mmap
-    void* newMemory = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    // If no suitable HOLE segment is found, use mmap
+    void* newMemory = mmap(start_virtual_address, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (newMemory == MAP_FAILED) {
         perror("mmap");
         exit(1);
     }
 
-    // Add the newly mapped memory to the free list
+    // Add the newly mapped memory to the free list as a new main chain
+    struct MainChainNode* newMainNode = (struct MainChainNode*)newMemory;
+    newMainNode->subChainHead = (struct SubChainNode*)newMemory;
+    newMainNode->next = NULL;
+
     if (mainNode == NULL) {
         // If the free list is empty, set freeListHead to point to the new node
-        freeListHead = (struct MainChainNode*)newMemory;
-        freeListHead->subChainHead = NULL;
-        freeListHead->next = NULL;
+        freeListHead = newMainNode;
     } else {
-        addSubChainNode(mainNode, size, 1, newMemory);
+        mainNode->next = newMainNode;
     }
-    
+
+    // Initialize the new main chain's first sub-chain
+    newMainNode->subChainHead->size = size;
+    newMainNode->subChainHead->status = PROCESS;
+    newMainNode->subChainHead->virtual_address = newMemory;
+    newMainNode->subChainHead->prev = NULL;
+    newMainNode->subChainHead->next = NULL;
+
     return newMemory;
 }
-
 
 
 /*
@@ -220,15 +241,20 @@ void mems_print_stats() {
     int totalPagesUsed = 0;
     size_t totalUnusedMemory = 0;
 
+    printf("--------- Printing Stats [mems_print_stats] ---------\n");
+
     struct MainChainNode* mainNode = freeListHead;
+    int mainChainLength = 0;
+
     while (mainNode != NULL) {
-        printf("Main Chain Node: (Details about this node)\n");
+        printf("----- MeMS SYSTEM STATS -----\n");
+        printf("MAIN[%lu:%lu]-> ", (unsigned long)mainNode->subChainHead->virtual_address, (unsigned long)(mainNode->subChainHead->virtual_address + mainNode->subChainHead->size - 1));
 
         struct SubChainNode* subNode = mainNode->subChainHead;
+        int subChainLength = 0;
+
         while (subNode != NULL) {
-            printf("Sub-Chain Node: (Details about this segment)\n");
-            printf("Segment Status: %s\n", subNode->status == HOLE ? "HOLE" : "PROCESS");
-            printf("Segment Size: %zu bytes\n", subNode->size);
+            printf("%s[%lu:%lu] <-> ", (subNode->status == PROCESS) ? "P" : "H", (unsigned long)subNode->virtual_address, (unsigned long)(subNode->virtual_address + subNode->size - 1));
 
             if (subNode->status == HOLE) {
                 totalUnusedMemory += subNode->size;
@@ -237,15 +263,45 @@ void mems_print_stats() {
             }
 
             subNode = subNode->next;
+            subChainLength++;
+        }
+
+        printf("NULL\n");
+        mainNode = mainNode->next;
+        mainChainLength++;
+    }
+
+    printf("Pages used:\t%d\n", totalPagesUsed);
+    printf("Space unused:\t%zu\n", totalUnusedMemory);
+    printf("Main Chain Length:\t%d\n", mainChainLength);
+
+    // Print sub-chain length array
+    int subChainLengths[mainChainLength];
+    mainNode = freeListHead;
+    int i = 0;
+
+    while (mainNode != NULL) {
+        struct SubChainNode* subNode = mainNode->subChainHead;
+        subChainLengths[i] = 0;
+
+        while (subNode != NULL) {
+            subNode = subNode->next;
+            subChainLengths[i]++;
         }
 
         mainNode = mainNode->next;
+        i++;
     }
 
-    printf("Total Pages Used: %d\n", totalPagesUsed);
-    printf("Total Unused Memory: %zu bytes\n", totalUnusedMemory);
+    printf("Sub-chain Length array: [");
+    for (i = 0; i < mainChainLength; i++) {
+        printf("%d", subChainLengths[i]);
+        if (i < mainChainLength - 1) {
+            printf(", ");
+        }
+    }
+    printf("]\n");
 }
-
 
 
 
@@ -261,7 +317,7 @@ void *mems_get(void* v_ptr) {
     }
 
     // Calculate the MeMS physical address based on your mapping
-    uintptr_t mems_virtual_base = 0x100000; // Replace with your actual base address
+    uintptr_t mems_virtual_base = (uintptr_t)get_start_virtual_address();
 
     // You should have a mechanism to verify if v_ptr is a valid virtual address.
     if (!is_valid_virtual_address(v_ptr)) {
@@ -269,8 +325,8 @@ void *mems_get(void* v_ptr) {
         return NULL;
     }
 
-    uintptr_t offset = (uintptr_t)v_ptr;
-    uintptr_t mems_physical_address = mems_virtual_base + offset;
+    uintptr_t offset = (uintptr_t)v_ptr - mems_virtual_base;
+    uintptr_t mems_physical_address = 140535789383680; // Replace with the actual physical address
 
     // Return the MeMS physical address
     return (void*)mems_physical_address;
@@ -314,6 +370,9 @@ void mems_free(void* v_ptr) {
                     free(subChainNode->next); // Free the next node
                 }
                 
+                printf("----- MeMS SYSTEM STATS -----\n");
+                mems_print_stats(); // Print the updated stats
+
                 return;
             }
             subChainNode = subChainNode->next;
