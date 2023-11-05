@@ -172,9 +172,6 @@ void* mems_malloc(size_t size) {
     struct MainChainNode* currentNode = freeListHead;
     struct MainChainNode* mainNode = NULL;
 
-    // Calculate the starting virtual address based on MeMS parameters
-    void* start_virtual_address = get_start_virtual_address();
-
     while (currentNode != NULL) {
         struct SubChainNode* subChainNode = currentNode->subChainHead;
         while (subChainNode != NULL) {
@@ -199,33 +196,71 @@ void* mems_malloc(size_t size) {
         currentNode = currentNode->next;
     }
 
-    // If no suitable HOLE segment is found, use mmap
-    void* newMemory = mmap(start_virtual_address, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (newMemory == MAP_FAILED) {
-        perror("mmap");
-        exit(1);
-    }
+    // Calculate the virtual address for the next allocation
+    if (mainNode != NULL) {
+        // If there is a main chain, allocate sequentially
+        void* next_virtual_address = mainNode->subChainHead->virtual_address +
+                                   mainNode->subChainHead->size;
+        next_virtual_address = (void*)((uintptr_t)next_virtual_address & ~(PAGE_SIZE - 1));
 
-    // Add the newly mapped memory to the free list as a new main chain
-    struct MainChainNode* newMainNode = (struct MainChainNode*)newMemory;
-    newMainNode->subChainHead = (struct SubChainNode*)newMemory;
-    newMainNode->next = NULL;
+        while (next_virtual_address == mainNode->subChainHead->virtual_address +
+                                     mainNode->subChainHead->size) {
+            // Continue to the next page if the previous one was fully used
+            next_virtual_address = (void*)((uintptr_t)next_virtual_address + PAGE_SIZE);
+        }
 
-    if (mainNode == NULL) {
-        // If the free list is empty, set freeListHead to point to the new node
-        freeListHead = newMainNode;
+        // Use mmap to allocate memory
+        void* newMemory = mmap(next_virtual_address, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (newMemory == MAP_FAILED) {
+            perror("mmap");
+            exit(1);
+        }
+
+        // Add the newly mapped memory to the free list as a new sub-chain
+        struct SubChainNode* newSubChainNode = (struct SubChainNode*)newMemory;
+        newSubChainNode->size = size;
+        newSubChainNode->status = PROCESS;
+        newSubChainNode->virtual_address = newMemory;
+        newSubChainNode->prev = NULL;
+        newSubChainNode->next = mainNode->subChainHead;
+
+        mainNode->subChainHead->prev = newSubChainNode;
+        mainNode->subChainHead = newSubChainNode;
+
+        return newMemory;
     } else {
-        mainNode->next = newMainNode;
+        // If no suitable HOLE segment is found, and there is no main chain, start from the beginning
+        void* start_virtual_address = get_start_virtual_address();
+
+        // Calculate the aligned starting virtual address based on PAGE_SIZE
+        uintptr_t aligned_virtual_address = (uintptr_t)start_virtual_address;
+
+        while (aligned_virtual_address % PAGE_SIZE != 0) {
+            aligned_virtual_address++;
+        }
+
+        // Use mmap to allocate memory
+        void* newMemory = mmap((void*)aligned_virtual_address, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (newMemory == MAP_FAILED) {
+            perror("mmap");
+            exit(1);
+        }
+
+        // Create a new main chain and sub-chain for the allocated memory
+        struct MainChainNode* newMainNode = (struct MainChainNode*)newMemory;
+        newMainNode->subChainHead = (struct SubChainNode*)newMemory;
+        newMainNode->next = NULL;
+
+        freeListHead = newMainNode;
+
+        newMainNode->subChainHead->size = size;
+        newMainNode->subChainHead->status = PROCESS;
+        newMainNode->subChainHead->virtual_address = newMemory;
+        newMainNode->subChainHead->prev = NULL;
+        newMainNode->subChainHead->next = NULL;
+
+        return newMemory;
     }
-
-    // Initialize the new main chain's first sub-chain
-    newMainNode->subChainHead->size = size;
-    newMainNode->subChainHead->status = PROCESS;
-    newMainNode->subChainHead->virtual_address = newMemory;
-    newMainNode->subChainHead->prev = NULL;
-    newMainNode->subChainHead->next = NULL;
-
-    return newMemory;
 }
 
 
