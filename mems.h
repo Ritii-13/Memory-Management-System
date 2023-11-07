@@ -14,7 +14,7 @@ REFER DOCUMENTATION FOR MORE DETAILS ON FUNSTIONS AND THEIR FUNCTIONALITY
 #include <unistd.h>
 #include <sys/mman.h>
 #include <stdbool.h>
-
+#include <stdint.h>
 
 #define HOLE 0
 #define PROCESS 1
@@ -50,7 +50,50 @@ struct MemorySegment {
     size_t size;
     struct MemorySegment* next;
 };
+static struct MainChainNode* freeListHead = NULL;
+void * get_start_virtual_address()
+{
+    return (void*) 0x7f7f7f7f7f7f;
+}
+// // Calculate the virtual address for the next allocation
+// void* get_virtual_address(void* p_ptr) {
+//     // Calculate the MeMS virtual address based on your mapping
+//     uintptr_t mems_physical_base = 140535789383680;
+//     uintptr_t offset = (uintptr_t)p_ptr - mems_physical_base;
+//     uintptr_t mems_virtual_address = 0x7f7f7f7f7f7f; // Replace with the actual virtual address
 
+//     // Return the MeMS virtual address
+//     return (void*)mems_virtual_address;
+// }
+void* get_virtual_address(void* p_ptr) {
+    // Calculate the virtual address for the next allocation
+    if (freeListHead != NULL) {
+        // If there is a main chain, allocate sequentially
+        void* next_virtual_address = freeListHead->subChainHead->virtual_address +
+                                   freeListHead->subChainHead->size;
+        next_virtual_address = (void*)((uintptr_t)next_virtual_address & ~(PAGE_SIZE - 1));
+
+        while (next_virtual_address == freeListHead->subChainHead->virtual_address +
+                                     freeListHead->subChainHead->size) {
+            // Continue to the next page if the previous one was fully used
+            next_virtual_address = (void*)((uintptr_t)next_virtual_address + PAGE_SIZE);
+        }
+
+        return next_virtual_address;
+    } else {
+        // If no suitable HOLE segment is found, and there is no main chain, start from the beginning
+        void* start_virtual_address = get_start_virtual_address();
+
+        // Calculate the aligned starting virtual address based on PAGE_SIZE
+        uintptr_t aligned_virtual_address = (uintptr_t)start_virtual_address;
+
+        while (aligned_virtual_address % PAGE_SIZE != 0) {
+            aligned_virtual_address++;
+        }
+
+        return (void*)aligned_virtual_address;
+    }
+}
 // Create a global pointer to the first memory segment
 struct MemorySegment* allocated_segments = NULL;
 
@@ -76,7 +119,7 @@ bool is_valid_virtual_address(void* v_ptr) {
 
 
 
-static struct MainChainNode* freeListHead = NULL;
+
 
 static void addSubChainNode(struct MainChainNode* mainNode, size_t size, int status, void* v_addr) {
     struct SubChainNode* newSubNode = (struct SubChainNode*)mmap(v_addr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -259,9 +302,10 @@ void* mems_malloc(size_t size) {
         newMainNode->subChainHead->prev = NULL;
         newMainNode->subChainHead->next = NULL;
 
-        return newMemory;
+        return get_virtual_address(newMemory);
     }
 }
+
 
 
 /*
